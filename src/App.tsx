@@ -36,6 +36,7 @@ export default function App() {
   const [lastMove, setLastMove] = useState<Position | null>(null);
   const [winner, setWinner] = useState<Player | 'Draw' | null>(null);
   const [winningCells, setWinningCells] = useState<Position[]>([]);
+  const [showResult, setShowResult] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
 
   const checkWin = useCallback((currentBoard: CellValue[][], row: number, col: number, player: Player) => {
@@ -70,7 +71,7 @@ export default function App() {
         } else break;
       }
 
-      if (count >= WIN_COUNT) return cells;
+      if (count === WIN_COUNT) return cells;
     }
     return null;
   }, []);
@@ -109,6 +110,8 @@ export default function App() {
     const checkLine = (r: number, c: number, dr: number, dc: number) => {
       let pCount = 0;
       let oCount = 0;
+      
+      // Check the segment of 4
       for (let i = 0; i < WIN_COUNT; i++) {
         const nr = r + dr * i;
         const nc = c + dc * i;
@@ -116,9 +119,36 @@ export default function App() {
         if (currentBoard[nr][nc] === player) pCount++;
         else if (currentBoard[nr][nc] === opponent) oCount++;
       }
+
       if (pCount > 0 && oCount > 0) return 0;
-      if (pCount === 4) return WIN_SCORE;
-      if (oCount === 4) return -WIN_SCORE;
+
+      // STRICT CHECK: For 4-in-a-row to be a win, it must NOT be part of a 5-in-a-row
+      if (pCount === 4) {
+        // Check both ends of the segment
+        const beforeR = r - dr;
+        const beforeC = c - dc;
+        const afterR = r + dr * WIN_COUNT;
+        const afterC = c + dc * WIN_COUNT;
+
+        const beforeIsSame = beforeR >= 0 && beforeR < GRID_SIZE && beforeC >= 0 && beforeC < GRID_SIZE && currentBoard[beforeR][beforeC] === player;
+        const afterIsSame = afterR >= 0 && afterR < GRID_SIZE && afterC >= 0 && afterC < GRID_SIZE && currentBoard[afterR][afterC] === player;
+
+        if (beforeIsSame || afterIsSame) return 0; // Not a winner if it's more than 4
+        return WIN_SCORE;
+      }
+
+      if (oCount === 4) {
+        const beforeR = r - dr;
+        const beforeC = c - dc;
+        const afterR = r + dr * WIN_COUNT;
+        const afterC = c + dc * WIN_COUNT;
+
+        const beforeIsSame = beforeR >= 0 && beforeR < GRID_SIZE && beforeC >= 0 && beforeC < GRID_SIZE && currentBoard[beforeR][beforeC] === opponent;
+        const afterIsSame = afterR >= 0 && afterR < GRID_SIZE && afterC >= 0 && afterC < GRID_SIZE && currentBoard[afterR][afterC] === opponent;
+
+        if (beforeIsSame || afterIsSame) return 0;
+        return -WIN_SCORE;
+      }
       
       // Aggressiveness scaling: Hard difficulty weights AI's own potential lines more heavily
       const ownWeight = difficulty === 'Hard' ? 1.4 : (difficulty === 'Medium' ? 1.2 : 1.0);
@@ -209,6 +239,8 @@ export default function App() {
     if (winResult) {
       setWinner(currentPlayer);
       setWinningCells(winResult);
+      // Wait 1 second before showing the result overlay
+      setTimeout(() => setShowResult(true), 1000);
       return;
     }
 
@@ -217,6 +249,7 @@ export default function App() {
     
     if (nextValidMoves.length === 0) {
       setWinner('Draw');
+      setTimeout(() => setShowResult(true), 1000);
     } else {
       setCurrentPlayer(nextPlayer);
     }
@@ -257,6 +290,7 @@ export default function App() {
     setLastMove(null);
     setWinner(null);
     setWinningCells([]);
+    setShowResult(false);
     setIsAiThinking(false);
   };
 
@@ -347,7 +381,7 @@ export default function App() {
                       aspect-square rounded-xl flex items-center justify-center relative overflow-hidden
                       ${!cell && isValid && !winner ? 'bg-slate-100 cursor-pointer shadow-inner' : 'bg-slate-50 cursor-default'}
                       ${isLastMove ? 'ring-2 ring-slate-400 ring-offset-2' : ''}
-                      ${isWinningCell ? (cell === 'Red' ? 'ring-4 ring-red-500 ring-offset-2 bg-red-50' : 'ring-4 ring-blue-500 ring-offset-2 bg-blue-50') : ''}
+                      ${isWinningCell ? (cell === 'Red' ? 'ring-4 ring-red-500 ring-offset-4 bg-red-50 z-20' : 'ring-4 ring-blue-500 ring-offset-4 bg-blue-50 z-20') : ''}
                       transition-all duration-200
                     `}
                   >
@@ -355,7 +389,27 @@ export default function App() {
                       {cell && (
                         <motion.div
                           initial={{ scale: 0, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
+                          animate={isWinningCell ? { 
+                            scale: [1, 1.15, 1],
+                            opacity: 1,
+                            boxShadow: [
+                              "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                              winner === 'Red' ? "0 0 20px rgb(239 68 68 / 0.6)" : "0 0 20px rgb(59 130 246 / 0.6)",
+                              "0 4px 6px -1px rgb(0 0 0 / 0.1)"
+                            ]
+                          } : { 
+                            scale: 1, 
+                            opacity: 1 
+                          }}
+                          transition={isWinningCell ? {
+                            repeat: Infinity,
+                            duration: 1.5,
+                            ease: "easeInOut"
+                          } : {
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 20
+                          }}
                           className={`w-4/5 h-4/5 rounded-lg shadow-md ${cell === 'Red' ? 'bg-red-500' : 'bg-blue-500'}`}
                         />
                       )}
@@ -368,38 +422,6 @@ export default function App() {
               })
             )}
           </div>
-
-          <AnimatePresence>
-            {winner && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="absolute inset-0 rounded-[32px] z-10 flex items-center justify-center bg-slate-900/10 backdrop-blur-sm"
-              >
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="bg-white p-8 rounded-3xl shadow-2xl text-center space-y-4 border border-slate-100 mx-6"
-                >
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg ${winner === 'Red' ? 'bg-red-500 shadow-red-100' : winner === 'Blue' ? 'bg-blue-500 shadow-blue-100' : 'bg-slate-400 shadow-slate-100'}`}>
-                    {winner === 'Draw' ? <AlertCircle className="w-8 h-8" /> : <Trophy className="w-8 h-8" />}
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">
-                      {winner === 'Draw' ? "DRAW!" : (winner === 'Blue' && gameMode === 'PvE' ? "AI WON!" : "VICTORY!")}
-                    </h2>
-                    <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-                      {winner === 'Draw' ? "No one can move anymore." : (winner === 'Red' ? "You displayed superior strategic foresight." : "The AI's logic was too strong this time.")}
-                    </p>
-                  </div>
-                  <button onClick={resetGame} className="w-full py-4 px-6 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-slate-200 active:scale-95">
-                    <RotateCcw className="w-4 h-4" />
-                    <span>REMATCH</span>
-                  </button>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         <div className="bg-slate-100 p-4 rounded-2xl border border-slate-200 text-[10px] text-slate-500 font-medium">
@@ -415,6 +437,42 @@ export default function App() {
           </ul>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showResult && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 20 }}
+              className="bg-white p-8 rounded-[40px] shadow-2xl text-center space-y-6 border border-slate-100 max-w-sm w-full"
+            >
+              <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto text-white shadow-xl ${winner === 'Red' ? 'bg-red-500 shadow-red-200' : winner === 'Blue' ? 'bg-blue-500 shadow-blue-200' : 'bg-slate-400 shadow-slate-200'}`}>
+                {winner === 'Draw' ? <AlertCircle className="w-10 h-10" /> : <Trophy className="w-10 h-10" />}
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-none">
+                  {winner === 'Draw' ? "DRAW!" : (winner === 'Blue' && gameMode === 'PvE' ? "AI WON!" : "VICTORY!")}
+                </h2>
+                <p className="text-slate-500 text-sm font-medium leading-relaxed px-4">
+                  {winner === 'Draw' ? "No moves left. Pure tactical stalemate." : (winner === 'Red' ? "Brilliant! You've mastered the adjacency strategy." : "The AI's logic proved invincible this round.")}
+                </p>
+              </div>
+              <button 
+                onClick={resetGame} 
+                className="w-full py-4 px-6 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-slate-200 active:scale-95 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>PLAY AGAIN</span>
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
