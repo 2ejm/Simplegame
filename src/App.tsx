@@ -11,6 +11,8 @@ type Player = 'Red' | 'Blue';
 type CellValue = Player | null;
 type GameMode = 'PvP' | 'PvE';
 
+type Difficulty = 'Easy' | 'Medium' | 'Hard';
+
 interface Position {
   row: number;
   col: number;
@@ -20,15 +22,16 @@ const GRID_SIZE = 7;
 const WIN_COUNT = 4;
 
 // Heuristic constants
-const WIN_SCORE = 10000;
-const THREE_IN_A_ROW = 100;
-const TWO_IN_A_ROW = 10;
+const WIN_SCORE = 1000000;
+const THREE_IN_A_ROW = 1000;
+const TWO_IN_A_ROW = 100;
 
 export default function App() {
   const [board, setBoard] = useState<CellValue[][]>(
     Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null))
   );
   const [gameMode, setGameMode] = useState<GameMode>('PvE');
+  const [difficulty, setDifficulty] = useState<Difficulty>('Medium');
   const [currentPlayer, setCurrentPlayer] = useState<Player>('Red');
   const [lastMove, setLastMove] = useState<Position | null>(null);
   const [winner, setWinner] = useState<Player | 'Draw' | null>(null);
@@ -116,9 +119,14 @@ export default function App() {
       if (pCount > 0 && oCount > 0) return 0;
       if (pCount === 4) return WIN_SCORE;
       if (oCount === 4) return -WIN_SCORE;
-      if (pCount === 3) return THREE_IN_A_ROW;
-      if (oCount === 3) return -THREE_IN_A_ROW * 1.5; // Weight blocking opponent higher
-      if (pCount === 2) return TWO_IN_A_ROW;
+      
+      // Aggressiveness scaling: Hard difficulty weights AI's own potential lines more heavily
+      const ownWeight = difficulty === 'Hard' ? 1.4 : (difficulty === 'Medium' ? 1.2 : 1.0);
+      const opponentWeight = 1.3; // Always try to block opponent reasonably well
+
+      if (pCount === 3) return THREE_IN_A_ROW * ownWeight;
+      if (oCount === 3) return -THREE_IN_A_ROW * opponentWeight;
+      if (pCount === 2) return TWO_IN_A_ROW * ownWeight;
       if (oCount === 2) return -TWO_IN_A_ROW;
       return 0;
     };
@@ -219,7 +227,13 @@ export default function App() {
       setIsAiThinking(true);
       const timer = setTimeout(() => {
         const boardCopy = board.map(r => [...r]);
-        const { move } = minimax(boardCopy, 5, -Infinity, Infinity, true, lastMove, 'Blue');
+        // Adjust search depth based on difficulty
+        const depthMap = {
+          'Easy': 3,
+          'Medium': 5,
+          'Hard': 7
+        };
+        const { move } = minimax(boardCopy, depthMap[difficulty], -Infinity, Infinity, true, lastMove, 'Blue');
         if (move) {
           executeMove(move.row, move.col);
         }
@@ -227,7 +241,7 @@ export default function App() {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [currentPlayer, gameMode, winner]);
+  }, [currentPlayer, gameMode, winner, difficulty, lastMove]);
 
   const handleCellClick = (row: number, col: number) => {
     if (isAiThinking || (gameMode === 'PvE' && currentPlayer === 'Blue')) return;
@@ -250,47 +264,71 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans text-slate-900">
-      <div className="max-w-md w-full space-y-6">
+      <div className="max-w-md w-full space-y-4">
         {/* Header */}
-        <div className="text-center space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">7x7 Strategic Connect</h1>
-          <div className="flex justify-center gap-2 pt-2">
-            <button 
-              onClick={() => { setGameMode('PvE'); resetGame(); }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${gameMode === 'PvE' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
-            >
-              Vs AI
-            </button>
-            <button 
-              onClick={() => { setGameMode('PvP'); resetGame(); }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${gameMode === 'PvP' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
-            >
-              2 Players
-            </button>
+        <div className="text-center space-y-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tactical 7x7</h1>
+            <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest">Adjacency Strategy Game</p>
+          </div>
+          
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-center gap-2">
+              <button 
+                onClick={() => { setGameMode('PvE'); resetGame(); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm ${gameMode === 'PvE' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
+              >
+                vs AI
+              </button>
+              <button 
+                onClick={() => { setGameMode('PvP'); resetGame(); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm ${gameMode === 'PvP' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}
+              >
+                2 Players
+              </button>
+            </div>
+
+            {gameMode === 'PvE' && (
+              <div className="bg-slate-100 p-1.5 rounded-xl flex gap-1 border border-slate-200 shadow-inner">
+                {(['Easy', 'Medium', 'Hard'] as Difficulty[]).map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => { setDifficulty(level); resetGame(); }}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all ${
+                      difficulty === level 
+                        ? 'bg-white text-blue-600 shadow-sm border border-slate-100' 
+                        : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Status Bar */}
-        <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200 text-sm">
           <div className="flex items-center space-x-3">
             <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full transition-colors ${currentPlayer === 'Red' && !winner ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
-              <User className="w-4 h-4" />
-              <span className="font-semibold text-sm">Player</span>
+              <div className={`w-2 h-2 rounded-full ${currentPlayer === 'Red' ? 'bg-red-500' : 'bg-slate-300'}`} />
+              <span className="font-bold">Player</span>
             </div>
             <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full transition-colors ${currentPlayer === 'Blue' && !winner ? 'bg-blue-100 text-blue-600' : 'text-slate-400'}`}>
-              <User className="w-4 h-4" />
-              <span className="font-semibold text-sm">{gameMode === 'PvE' ? 'AI' : 'Blue'}</span>
+              <div className={`w-2 h-2 rounded-full ${currentPlayer === 'Blue' ? 'bg-blue-500' : 'bg-slate-300'}`} />
+              <span className="font-bold">{gameMode === 'PvE' ? `AI (${difficulty})` : 'Blue'}</span>
               {isAiThinking && <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1 }}>...</motion.span>}
             </div>
           </div>
           
-          <button onClick={resetGame} className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-500 hover:text-slate-900">
+          <button onClick={resetGame} className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900 active:scale-95 border border-transparent hover:border-slate-100">
             <RotateCcw className="w-5 h-5" />
           </button>
         </div>
 
         {/* Game Board */}
-        <div className="relative bg-white p-3 rounded-3xl shadow-xl border border-slate-200 select-none">
+        <div className="relative bg-white p-3 rounded-[32px] shadow-xl border border-slate-200 select-none overflow-hidden">
           <div className="grid grid-cols-7 gap-2">
             {board.map((row, rIdx) => 
               row.map((cell, cIdx) => {
@@ -336,25 +374,27 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="absolute inset-0 rounded-3xl z-10 flex items-center justify-center bg-slate-900/10 backdrop-blur-sm"
+                className="absolute inset-0 rounded-[32px] z-10 flex items-center justify-center bg-slate-900/10 backdrop-blur-sm"
               >
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="bg-white p-8 rounded-3xl shadow-2xl text-center space-y-4 border border-slate-100"
+                  className="bg-white p-8 rounded-3xl shadow-2xl text-center space-y-4 border border-slate-100 mx-6"
                 >
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg ${winner === 'Red' ? 'bg-red-500 shadow-red-200' : winner === 'Blue' ? 'bg-blue-500 shadow-blue-200' : 'bg-slate-400 shadow-slate-200'}`}>
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg ${winner === 'Red' ? 'bg-red-500 shadow-red-100' : winner === 'Blue' ? 'bg-blue-500 shadow-blue-100' : 'bg-slate-400 shadow-slate-100'}`}>
                     {winner === 'Draw' ? <AlertCircle className="w-8 h-8" /> : <Trophy className="w-8 h-8" />}
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">{winner === 'Draw' ? "It's a Draw!" : `${winner === 'Blue' && gameMode === 'PvE' ? 'AI' : winner} Wins!`}</h2>
-                    <p className="text-slate-500 text-sm">
-                      {winner === 'Red' && gameMode === 'PvE' ? "You outsmarted the AI!" : "Better luck next time!"}
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+                      {winner === 'Draw' ? "DRAW!" : (winner === 'Blue' && gameMode === 'PvE' ? "AI WON!" : "VICTORY!")}
+                    </h2>
+                    <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+                      {winner === 'Draw' ? "No one can move anymore." : (winner === 'Red' ? "You displayed superior strategic foresight." : "The AI's logic was too strong this time.")}
                     </p>
                   </div>
-                  <button onClick={resetGame} className="w-full py-3 px-6 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-colors flex items-center justify-center space-x-2">
+                  <button onClick={resetGame} className="w-full py-4 px-6 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-slate-200 active:scale-95">
                     <RotateCcw className="w-4 h-4" />
-                    <span>Play Again</span>
+                    <span>REMATCH</span>
                   </button>
                 </motion.div>
               </motion.div>
@@ -362,12 +402,17 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 text-[11px] text-slate-500">
-          <div className="flex items-center gap-2 mb-2 text-slate-700 font-bold">
+        <div className="bg-slate-100 p-4 rounded-2xl border border-slate-200 text-[10px] text-slate-500 font-medium">
+          <div className="flex items-center gap-2 mb-2 text-slate-800 font-black uppercase tracking-widest">
             <Info className="w-3.5 h-3.5 text-blue-500" />
-            <span>HOW TO PLAY</span>
+            <span>Rules</span>
           </div>
-          <p>The AI will always play in one of the 8 empty cells around your last move. If you block its paths, it will try to find a new way to connect 4. Connect 4 horizontally, vertically or diagonally to win!</p>
+          <ul className="space-y-1.5 opacity-80 decoration-slate-400 list-disc list-inside">
+            <li>Connect 4 in any line to win.</li>
+            <li>You MUST play adjacent (including diagonals) to the opponent's last move.</li>
+            <li>Blocking the opponent's path leads to a Draw if no moves remain.</li>
+            <li>AI difficulty increases total move look-ahead (Easy: 3, Mid: 5, Hard: 7).</li>
+          </ul>
         </div>
       </div>
     </div>
